@@ -12,7 +12,7 @@ import type { StreamRecord } from "../data/streamRecords";
 import { withdraw } from "../lib/stellar/tx";
 import { getStreamStatusNotificationContent } from "../components/ToastNotification";
 import { TransactionReceiptPreview } from "../components/receipt/TransactionReceiptPreview";
-import type { ReceiptData } from "../utils/receiptGenerator";
+import { formatReceiptAmount, type ReceiptData } from "../utils/receiptGenerator";
 import { config } from "../lib/config";
 import { Shield, Fingerprint, Lock, Key, CheckCircle2, XCircle, AlertCircle, X } from "lucide-react";
 import RecipientMonthlySummary from "../components/recipient/RecipientMonthlySummary";
@@ -30,6 +30,7 @@ const DEMO_ACTIVE = 2;
 const DEMO_TOTAL_ACCRUED = 43250.0;
 const DEMO_TOTAL_WITHDRAWN = 20650.0;
 const USDC_SCALE = 10_000_000;
+const USDC_DECIMALS = 7;
 const MAX_U64 = 18_446_744_073_709_551_615n;
 const RECIPIENT_PAGE_TITLE = "Fluxora — Recipient portal";
 const ALERTS_STORAGE_KEY = "fluxora.stream-alerts.enabled";
@@ -618,7 +619,7 @@ export default function Recipient() {
         type: "Withdrawal",
         sender: "Treasury Smart Contract",
         recipient: recipientAddr,
-        amount: formatAssetAmount(balance, "USDC"),
+        amount: formatReceiptAmount(amountStr, USDC_DECIMALS, "USDC"),
         timestamp: new Date().toISOString(),
         txHash: typeof txRes === "string" ? txRes : null,
         status: typeof txRes === "string" ? "confirmed" : "pending",

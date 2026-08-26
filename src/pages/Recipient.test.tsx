@@ -172,6 +172,42 @@ describe("Recipient wallet source", () => {
       "2",
       "42000000000",
     );
+
+    // The receipt shows the exact withdrawn amount (smallest-unit derived),
+    // never a Number-rounded value.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("4,200.0000000 USDC")).toBeInTheDocument();
+  });
+
+  it("renders the exact withdrawal amount on the receipt for fractional balances", async () => {
+    walletState.connected = true;
+    walletState.address =
+      "GATDOSCZNJ5YZHNOX7IOD4QDCQSTMR2YNF5IXHFNX3H6B4ICCMSDLOWN";
+    walletState.network = "TESTNET";
+    recipientStreamsState.streams = [
+      makeMockStream({
+        id: "2",
+        withdrawableAmount: 4200.1234567,
+        streamedAmount: 5000,
+      }),
+    ];
+
+    renderRecipientAndWaitForMinLoading();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Withdraw 4,200 USDC/i }),
+    );
+
+    await act(async () => {});
+
+    // 4200.1234567 USDC = 42001234567 smallest units — full precision preserved
+    expect(withdrawMock).toHaveBeenCalledWith(
+      walletState.address,
+      "2",
+      "42001234567",
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("4,200.1234567 USDC")).toBeInTheDocument();
   });
 
   it("updates the document title when the tab is blurred and clears it on focus", () => {
