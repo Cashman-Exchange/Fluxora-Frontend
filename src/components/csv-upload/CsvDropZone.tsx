@@ -1,7 +1,9 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './CsvDropZone.css';
 import type { UploadZoneState } from './types';
-import { parseAndValidateCsv, buildTemplateCsv, MAX_CSV_FILE_SIZE_BYTES } from './csvParser';
+import { buildTemplateCsv, MAX_CSV_FILE_SIZE_BYTES } from './csvParser';
+import { CsvParseCancelledError, parseCsvAsync } from './csvParseClient';
+import type { CsvParseTask } from './csvParseClient';
 import type { ParseResult } from './types';
 import { ValidationMessage } from '../ValidationMessage';
 
@@ -31,6 +33,15 @@ export const CsvDropZone: React.FC<CsvDropZoneProps> = ({ onParsed }) => {
   const [parsedFileName, setParsedFileName] = useState<string | null>(null);
   const [parsedRowCount, setParsedRowCount] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Tracks the in-flight worker parse so a new file selection (or unmount)
+  // can abort it cleanly instead of letting it finish and clobber state.
+  const inFlightParseRef = useRef<CsvParseTask | null>(null);
+
+  useEffect(() => {
+    return () => {
+      inFlightParseRef.current?.cancel();
+    };
+  }, []);
 
   const processFile = useCallback(
     async (file: File) => {
@@ -54,12 +65,20 @@ export const CsvDropZone: React.FC<CsvDropZoneProps> = ({ onParsed }) => {
         return;
       }
 
+      // Abort any parse still in flight before starting a new one.
+      inFlightParseRef.current?.cancel();
+
       setZoneState('parsing');
       setParseError(null);
 
+      let task: CsvParseTask | null = null;
       try {
         const text = await file.text();
-        const result = parseAndValidateCsv(text);
+        // Parsing/validation runs on a dedicated Web Worker so the UI stays
+        // responsive while large files are processed.
+        task = parseCsvAsync(text);
+        inFlightParseRef.current = task;
+        const result = await task.promise;
 
         if (result.parseError) {
           setZoneState('parse-error');
@@ -72,9 +91,16 @@ export const CsvDropZone: React.FC<CsvDropZoneProps> = ({ onParsed }) => {
         setParsedRowCount(rowCount);
         setZoneState('parsed');
         onParsed(result, file.name, text);
-      } catch {
+      } catch (err) {
+        // A cancelled parse is expected (new file selected / unmount); leave
+        // the zone in its current state without surfacing an error.
+        if (err instanceof CsvParseCancelledError) return;
         setZoneState('parse-error');
         setParseError('Failed to read the file. Please try again.');
+      } finally {
+        if (task && inFlightParseRef.current === task) {
+          inFlightParseRef.current = null;
+        }
       }
     },
     [onParsed],
