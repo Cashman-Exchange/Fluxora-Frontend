@@ -632,3 +632,60 @@ describe("StreamDetail block explorer URL network configuration", () => {
     );
   });
 });
+
+describe("Streams filtered-empty state recovery", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    mockMatchMedia(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("renders a distinct filtered-empty state with a Clear filters recovery action", async () => {
+    renderStreams();
+    await finishLoading();
+
+    // Apply a query that matches no streams.
+    fireEvent.change(screen.getByLabelText("Search streams by name, ID or recipient"), {
+      target: { value: "zzz-no-such-stream" },
+    });
+
+    // The filtered-empty state must be a proper EmptyState (region + heading),
+    // not just a bare <p>.
+    expect(screen.getByRole("region", { name: "Search no results state" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /no results found/i }),
+    ).toBeInTheDocument();
+
+    // A recovery action must be present so the user can get back to results.
+    const clearFiltersButton = screen.getByRole("button", { name: /clear filters/i });
+    expect(clearFiltersButton).toBeInTheDocument();
+  });
+
+  it("clear filters resets the query and restores stream results on the same route", async () => {
+    renderStreams();
+    await finishLoading();
+
+    fireEvent.change(screen.getByLabelText("Search streams by name, ID or recipient"), {
+      target: { value: "zzz-no-such-stream" },
+    });
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+
+    const clearFiltersButton = screen.getByRole("button", { name: /clear filters/i });
+    fireEvent.click(clearFiltersButton);
+
+    // Results come back after clearing the filter.
+    expect(screen.getAllByRole("article").length).toBeGreaterThan(0);
+    // The input is cleared so the active query is preserved/reset consistently.
+    expect(
+      (screen.getByLabelText("Search streams by name, ID or recipient") as HTMLInputElement)
+        .value,
+    ).toBe("");
+    // Stays on the same route (/app/streams) — wallet context is not lost.
+    expect(window.location.hash).toBe("");
+  });
+});
