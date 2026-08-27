@@ -42,6 +42,8 @@ import {
   evaluateContrast,
   THEME_BACKGROUNDS,
 } from '../utils/contrastUtils';
+import { formatReceiptAmount } from '../utils/receiptGenerator';
+import { amountToSmallestUnits } from '../lib/formatters';
 
 /** Top-level flow mode: choose between single-stream or bulk-CSV. */
 type FlowMode = 'choose' | 'single' | 'bulk';
@@ -436,8 +438,12 @@ export default function CreateStreamModal({
 
   const buildSubmissionPayload = (): StreamSubmissionPayload => {
     const sender = wallet.address!;
-    const parsedAmount = parseFloat(depositAmount.replace(/,/g, "")) || 0;
-    const amount = Math.floor(parsedAmount * 10_000_000).toString();
+    // Scale the exact deposit string to smallest units with BigInt string
+    // arithmetic — no Number conversion, so large/precise deposits are exact.
+    const amount = amountToSmallestUnits(
+      depositAmount,
+      USDC_DECIMAL_PLACES,
+    ).toString();
 
     const start = startTimeOption === "now"
       ? Math.floor(Date.now() / 1000)
@@ -494,10 +500,13 @@ export default function CreateStreamModal({
 
     setHasCompletedConfirmation(true);
 
-    const amountNum = parseFloat(depositAmount.replace(/,/g, "")) || 0;
     const createdData: StreamCreatedData = {
       txHash: submittedTxHash,
-      amount: `${amountNum.toLocaleString()} USDC`,
+      amount: formatReceiptAmount(
+        amountToSmallestUnits(depositAmount, USDC_DECIMAL_PLACES),
+        USDC_DECIMAL_PLACES,
+        "USDC",
+      ),
       rate: `${accrualRate} USDC/day`,
       sender: wallet.address ?? "",
       recipient,
@@ -796,6 +805,10 @@ export default function CreateStreamModal({
     const hasGeneralError = contrastState === 'AA-fail-blocked';
     
     setErrors(step1Errors);
+
+    // Invalid recipient/deposit fields must block submission — otherwise a
+    // malformed amount could silently reach the on-chain payload as 0.
+    if (Object.keys(step1Errors).length > 0) return false;
 
     if (step2Errors.accrualRate || step2Errors.duration || step2Errors.deposits || step2Errors.customStartDate || step2Errors.cliffDate) {
       setErrors(prev => ({ ...prev, ...step2Errors }));
