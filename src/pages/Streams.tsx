@@ -1089,6 +1089,10 @@ export default function Streams() {
     refetch();
   }, [refetch, streams.length]);
 
+  const handleStreamError = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
   const handleCopyRecipient = useCallback(
     async (stream: StreamRecord) => {
       const success = await copyToClipboard(stream.recipientAddress);
@@ -1185,6 +1189,7 @@ export default function Streams() {
             isOpen={isCreateModalOpen}
             onClose={handleCloseCreateModal}
             onStreamCreated={handleStreamCreated}
+            onStreamError={handleStreamError}
             initialDraft={restoredDraft}
             onDraftChange={setLiveDraft}
           />
@@ -1436,6 +1441,7 @@ export default function Streams() {
           isOpen={isCreateModalOpen}
           onClose={handleCloseCreateModal}
           onStreamCreated={handleStreamCreated}
+          onStreamError={handleStreamError}
           initialDraft={restoredDraft}
           onDraftChange={setLiveDraft}
         />
