@@ -1153,6 +1153,19 @@ export default function Streams() {
     [announce],
   );
 
+  /**
+   * Filtered-empty recovery action: reset all active filters and return to the
+   * first page of results. Stays on the same route (/app/streams) and keeps the
+   * connected wallet context intact — it only resets the local query state.
+   */
+  const handleClearFilters = useCallback(() => {
+    resolveSessionOnInteraction();
+    setSearchQuery("");
+    setStatusFilter("All");
+    setSortBy("recent");
+    setCurrentPage(1);
+  }, [resolveSessionOnInteraction]);
+
   if (loading || (error && retryCount >= MAX_LOADING_RETRIES)) {
     return <StreamsLoading retryCount={retryCount} onRetry={refetch} />;
   }
@@ -1394,9 +1407,11 @@ export default function Streams() {
               ariaLabel={t("streams.list.cardsAriaLabel")}
               className="streams-list"
               emptyState={
-                <div className="streams-empty-search">
-                  <p>{t("streams.emptySearch.text")}</p>
-                </div>
+                <EmptyState
+                  variant="search-no-results"
+                  walletConnected={walletConnected}
+                  onClearFilters={handleClearFilters}
+                />
               }
               estimateSize={STREAM_CARD_ESTIMATED_HEIGHT}
               getKey={(stream) => stream.id}
