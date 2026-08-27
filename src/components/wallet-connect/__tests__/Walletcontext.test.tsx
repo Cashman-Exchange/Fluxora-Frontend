@@ -78,7 +78,7 @@ describe("WalletProvider restore errors", () => {
   // Tracked as pre-existing test debt.
   it.skip("restores an approved wallet and clears previous errors", async () => {
     mockedIsConnected.mockResolvedValue({ isConnected: true });
-    mockedGetAddress.mockResolvedValue({ address: "GAPPROVEDADDRESS" });
+    mockedGetAddress.mockResolvedValue({ address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT" });
     mockedGetNetwork.mockResolvedValue({
       network: "TESTNET",
       networkPassphrase: "Test SDF Network ; September 2015",
@@ -88,7 +88,7 @@ describe("WalletProvider restore errors", () => {
 
     await waitFor(() =>
       expect(walletState()).toEqual({
-        address: "GAPPROVEDADDRESS",
+        address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT",
         connected: true,
         error: null,
         network: "TESTNET",
@@ -137,7 +137,7 @@ describe("WalletProvider restore errors", () => {
   // Tracked as pre-existing test debt.
   it.skip("records network_error when network lookup fails", async () => {
     mockedIsConnected.mockResolvedValue({ isConnected: true });
-    mockedGetAddress.mockResolvedValue({ address: "GAPPROVEDADDRESS" });
+    mockedGetAddress.mockResolvedValue({ address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT" });
     mockedGetNetwork.mockResolvedValue({
       network: "",
       networkPassphrase: "",
@@ -189,11 +189,11 @@ describe("WalletProvider restore loading", () => {
     );
   });
 
-  // Skipped: pre-existing timing/mock-wiring failure unrelated to CI setup.
-  // Tracked as pre-existing test debt.
-  it.skip("clears loading after restoring a verified address", async () => {
+  it("clears loading after restoring a verified address", async () => {
     mockedIsConnected.mockResolvedValue({ isConnected: true });
-    mockedGetAddress.mockResolvedValue({ address: "GAPPROVEDADDRESS" });
+    mockedGetAddress.mockResolvedValue({
+      address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT",
+    });
     mockedGetNetwork.mockResolvedValue({
       network: "TESTNET",
       networkPassphrase: "Test SDF Network ; September 2015",
@@ -203,10 +203,50 @@ describe("WalletProvider restore loading", () => {
 
     await waitFor(() =>
       expect(walletState()).toMatchObject({
-        address: "GAPPROVEDADDRESS",
+        address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT",
         connected: true,
         loading: false,
       }),
+    );
+  });
+
+  it("clears loading after a rejected restore", async () => {
+    mockedIsConnected.mockResolvedValue({ isConnected: true });
+    mockedGetAddress.mockResolvedValue({
+      address: "",
+      error: { code: -4, message: "User declined access" },
+    });
+
+    renderWalletProvider();
+
+    await waitFor(() =>
+      expect(walletState()).toMatchObject({
+        connected: false,
+        error: "rejected",
+        loading: false,
+      }),
+    );
+  });
+
+  it("clears loading without leaking state after unmount", async () => {
+    mockedIsConnected.mockResolvedValue({ isConnected: true });
+    mockedGetAddress.mockResolvedValue({
+      address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT",
+    });
+    mockedGetNetwork.mockResolvedValue({
+      network: "TESTNET",
+      networkPassphrase: "Test SDF Network ; September 2015",
+    });
+
+    const { unmount } = render(
+      <WalletProvider>
+        <WalletProbe />
+      </WalletProvider>,
+    );
+    unmount();
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("wallet state")).toBeNull(),
     );
   });
 });

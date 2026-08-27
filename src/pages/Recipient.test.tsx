@@ -7,6 +7,7 @@ import Recipient, {
   isValidWithdrawStreamId,
   selectWithdrawStream,
 } from "./Recipient";
+import { getRecipientRouteKey } from "./recipientRouteKey";
 
 const walletState = vi.hoisted(() => ({
   connected: false,
@@ -47,6 +48,7 @@ const recipientStreamsState = vi.hoisted(() => ({
   loading: false,
   error: null as string | null,
   refetch: vi.fn(),
+  addresses: [] as Array<string | null | undefined>,
 }));
 
 const withdrawMock = vi.hoisted(() => vi.fn());
@@ -72,12 +74,16 @@ vi.mock("../components/treasuryOverviewPage/useTreasury", () => ({
     error: null,
     refetch: vi.fn(),
   }),
-  useRecipientStreams: () => ({
+  useRecipientStreams: (address: string | null | undefined) => {
+    recipientStreamsState.addresses.push(address);
+    return {
     streams: recipientStreamsState.streams,
     loading: recipientStreamsState.loading,
     error: recipientStreamsState.error,
     refetch: recipientStreamsState.refetch,
-  }),
+    retryCount: 0,
+    };
+  },
 }));
 
 vi.mock("../lib/stellar/tx", () => ({
@@ -111,6 +117,7 @@ describe("Recipient wallet source", () => {
     recipientStreamsState.loading = false;
     recipientStreamsState.error = null;
     recipientStreamsState.refetch = vi.fn();
+    recipientStreamsState.addresses = [];
     withdrawMock.mockReset();
     withdrawMock.mockResolvedValue({});
   });
@@ -144,6 +151,28 @@ describe("Recipient wallet source", () => {
       screen.getByRole("button", { name: /Withdraw 22,600 USDC/i }),
     ).toBeEnabled();
     expect(screen.getByText("Withdrawable now")).toBeInTheDocument();
+  });
+
+  it("scopes the recipient query to the latest wallet account", () => {
+    walletState.connected = true;
+    walletState.address = "GATDOSCZNJ5YZHNOX7IOD4QDCQSTMR2YNF5IXHFNX3H6B4ICCMSDLOWN";
+    walletState.network = "TESTNET";
+
+    const { rerender } = renderRecipientAndWaitForMinLoading();
+    walletState.address = "GBQW7K4JQ7ZQWJ3A6VQJ2D4T6N5H7YQ2P4A6M8N0R2T4V6X8Z0C2E4G6I8";
+    rerender(<Recipient />);
+
+    expect(recipientStreamsState.addresses).toContain(walletState.address);
+    expect(recipientStreamsState.addresses[recipientStreamsState.addresses.length - 1]).toBe(walletState.address);
+  });
+
+  it("changes the recipient surface identity when the route query changes", () => {
+    expect(getRecipientRouteKey("/app/recipient", "?view=active")).not.toBe(
+      getRecipientRouteKey("/app/recipient", "?view=history"),
+    );
+    expect(getRecipientRouteKey("/app/recipient", "")).not.toBe(
+      getRecipientRouteKey("/app/streams", ""),
+    );
   });
 
   it("withdraws using the selected live recipient stream id", async () => {
