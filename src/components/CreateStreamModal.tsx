@@ -513,6 +513,29 @@ export default function CreateStreamModal({
     recipient,
   ]);
 
+  useEffect(() => {
+    if (transactionStatus.status !== "failed" || !submittedTxHash) {
+      return;
+    }
+
+    const message =
+      transactionStatus.error ??
+      t("createStream.step3.statusFailed", {
+        error: "Transaction confirmation failed. Please retry.",
+      });
+    setStreamError(message);
+    setSubmittedTxHash(null);
+    setHasCompletedConfirmation(false);
+    flushedFromQueueRef.current = false;
+    onStreamError?.(new Error(message));
+  }, [
+    onStreamError,
+    submittedTxHash,
+    t,
+    transactionStatus.error,
+    transactionStatus.status,
+  ]);
+
   // Auto-flush a queued submission as soon as connectivity returns. Runs even
   // while the modal is closed (isOpen=false only skips rendering — this
   // component and its effects stay mounted for the lifetime of the parent).
