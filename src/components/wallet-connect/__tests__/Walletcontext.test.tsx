@@ -250,4 +250,44 @@ describe("WalletProvider restore loading", () => {
       }),
     );
   });
+
+  it("clears loading after a rejected restore", async () => {
+    mockedIsConnected.mockResolvedValue({ isConnected: true });
+    mockedGetAddress.mockResolvedValue({
+      address: "",
+      error: { code: -4, message: "User declined access" },
+    });
+
+    renderWalletProvider();
+
+    await waitFor(() =>
+      expect(walletState()).toMatchObject({
+        connected: false,
+        error: "rejected",
+        loading: false,
+      }),
+    );
+  });
+
+  it("clears loading without leaking state after unmount", async () => {
+    mockedIsConnected.mockResolvedValue({ isConnected: true });
+    mockedGetAddress.mockResolvedValue({
+      address: "GAFTAVL2T7COSDRTLB62FR7MCE3FXAFFZLXRIOK6QOUM34QXHRQYMVIT",
+    });
+    mockedGetNetwork.mockResolvedValue({
+      network: "TESTNET",
+      networkPassphrase: "Test SDF Network ; September 2015",
+    });
+
+    const { unmount } = render(
+      <WalletProvider>
+        <WalletProbe />
+      </WalletProvider>,
+    );
+    unmount();
+
+    await waitFor(() =>
+      expect(screen.queryByLabelText("wallet state")).toBeNull(),
+    );
+  });
 });
