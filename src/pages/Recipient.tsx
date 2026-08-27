@@ -1,12 +1,10 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import RecipientEmptyState from "../components/RecipientEmptyState";
 import { RecipientStreams, type Stream } from "../components/recipient/RecipientStreams";
 import RecipientLoading from "../components/RecipientLoading";
-import { MAX_LOADING_RETRIES } from "../components/Skeleton";
 import ZeroAccrualBanner from "../components/ZeroAccrualBanner";
 import { useWallet } from "../components/wallet-connect/Walletcontext";
 import { useToast } from "../components/toast/ToastProvider";
-import { useRecipientStreams } from "../components/treasuryOverviewPage/useTreasury";
 import { formatAssetAmount } from "../lib/formatters";
 import type { StreamRecord } from "../data/streamRecords";
 import { withdraw } from "../lib/stellar/tx";
@@ -20,16 +18,14 @@ import "./Streams.css";
 import "./Recipient.css";
 import { useFaviconBadge } from "../utils/faviconBadge";
 import { useModalAccessibility } from "../components/useModalAccessibility";
+import { useRecipientPageData } from "./useRecipientPageData";
 
 // (Removed top-level timeoutRef and useEffect; will be added inside component)
 
 // Demo balances used as a UI fallback when the service returns no recipient
 // streams (no live backend yet, or no seeded match for the connected address).
-const DEMO_BALANCE = 22600.0;
-const DEMO_ACTIVE = 2;
-const DEMO_TOTAL_ACCRUED = 43250.0;
-const DEMO_TOTAL_WITHDRAWN = 20650.0;
 const USDC_SCALE = 10_000_000;
+const DEMO_BALANCE = 22600.0;
 const MAX_U64 = 18_446_744_073_709_551_615n;
 const RECIPIENT_PAGE_TITLE = "Fluxora — Recipient portal";
 const ALERTS_STORAGE_KEY = "fluxora.stream-alerts.enabled";
@@ -104,6 +100,28 @@ export function getRecipientPageTitle(
 export default function Recipient() {
   const wallet = useWallet();
   const { addToast } = useToast();
+  const recipientData = useRecipientPageData({
+    address: wallet.address,
+    connected: wallet.connected,
+  });
+  const {
+    streams: liveStreams,
+    hasLiveStreams,
+    hasStreams,
+    walletConnected,
+    balance,
+    activeStreams,
+    totalAccrued,
+    totalWithdrawn,
+    pageLoading,
+    effectiveEmptyStateLoading,
+    isRetryingDisabled,
+    error: streamsError,
+    retryCount,
+    isRetryExhausted,
+    retryButtonRef: pageRetryButtonRef,
+    refetch: handlePageRefetch,
+  } = recipientData;
 
   const [txState, setTxState] = useState<
     "idle" | "signing" | "submitting" | "confirmed" | "error"
@@ -126,14 +144,6 @@ export default function Recipient() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const recipientStreams = useRecipientStreams(wallet.address);
-
-  const [minLoadingElapsed, setMinLoadingElapsed] = useState(false);
-  const minLoadingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pageRefetchState, setPageRefetchState] = useState<"idle" | "retrying">("idle");
-  const prevStreamsErrorRef = useRef<string | null>(null);
-  const pageRetryButtonRef = useRef<HTMLButtonElement>(null);
 
   // ── Local Security Gate States ──
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
@@ -198,38 +208,6 @@ export default function Recipient() {
     checkSupport();
   }, []);
 
-  const MIN_LOADING_MS = 300;
-
-  useEffect(() => {
-    minLoadingRef.current = setTimeout(() => setMinLoadingElapsed(true), MIN_LOADING_MS);
-    return () => {
-      if (minLoadingRef.current) {
-        clearTimeout(minLoadingRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const hadError = Boolean(prevStreamsErrorRef.current);
-    const hasError = Boolean(recipientStreams.error);
-
-    if (!hadError && hasError && pageRetryButtonRef.current) {
-      pageRetryButtonRef.current.focus();
-    }
-
-    prevStreamsErrorRef.current = recipientStreams.error ?? null;
-  }, [recipientStreams.error]);
-
-  const handlePageRefetch = useCallback(async () => {
-    setPageRefetchState("retrying");
-    try {
-      recipientStreams.refetch();
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    } finally {
-      setPageRefetchState("idle");
-    }
-  }, [recipientStreams]);
-
   /**
    * Resets transaction state when the active wallet address changes.
    * This prevents stale errors or pending states from carrying over to a different account.
@@ -241,12 +219,6 @@ export default function Recipient() {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    setMinLoadingElapsed(false);
-    if (minLoadingRef.current) {
-      clearTimeout(minLoadingRef.current);
-    }
-    minLoadingRef.current = setTimeout(() => setMinLoadingElapsed(true), MIN_LOADING_MS);
-    prevStreamsErrorRef.current = null;
   }, [wallet.address]);
 
   useEffect(() => {
@@ -263,10 +235,6 @@ export default function Recipient() {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
-      if (minLoadingRef.current) {
-        clearTimeout(minLoadingRef.current);
-      }
-
       document.title = RECIPIENT_PAGE_TITLE;
     };
   }, []);
@@ -275,30 +243,6 @@ export default function Recipient() {
     { id: "1", sender: "Treasury", amount: "12000", status: "active" },
     { id: "2", sender: "Payroll", amount: "8600", status: "active" },
   ], []);
-
-  const liveStreams = recipientStreams.streams;
-  // A service error means we cannot confirm the recipient has no streams —
-  // treat it the same as "no streams yet" so we show the error+retry path
-  // instead of silently falling through to demo balance values.
-  const hasLiveStreams = liveStreams.length > 0 && !recipientStreams.error;
-
-  const walletConnected = wallet.connected;
-
-  const pageLoading = useMemo(() => {
-    if (!walletConnected) return false;
-    const dataLoading = recipientStreams.loading;
-    if (dataLoading) return true;
-    if (!minLoadingElapsed) return true;
-    return false;
-  }, [walletConnected, recipientStreams.loading, minLoadingElapsed]);
-
-  const effectiveEmptyStateLoading = useMemo(() => {
-    if (!walletConnected) return false;
-    if (recipientStreams.error) return false;
-    return recipientStreams.loading || pageRefetchState === "retrying";
-  }, [walletConnected, recipientStreams.loading, recipientStreams.error, pageRefetchState]);
-
-  const isRetryingDisabled = pageRefetchState === "retrying" || recipientStreams.loading;
 
   const demoWithdrawStream: WithdrawStreamCandidate = {
     id: "1",
@@ -318,25 +262,6 @@ export default function Recipient() {
       isValidWithdrawStreamId(stream.id),
   ).length;
   const selectedWithdrawStream = selectWithdrawStream(withdrawStreamCandidates);
-
-  const balance = hasLiveStreams
-    ? liveStreams.reduce((sum, stream) => sum + stream.withdrawableAmount, 0)
-    : DEMO_BALANCE;
-  const activeStreams = hasLiveStreams
-    ? liveStreams.filter((stream) => stream.status === "Active").length
-    : DEMO_ACTIVE;
-  const totalAccrued = hasLiveStreams
-    ? liveStreams.reduce((sum, stream) => sum + stream.streamedAmount, 0)
-    : DEMO_TOTAL_ACCRUED;
-  const totalWithdrawn = hasLiveStreams
-    ? liveStreams.reduce(
-        (sum, stream) =>
-          sum + Math.max(0, stream.streamedAmount - stream.withdrawableAmount),
-        0,
-      )
-    : DEMO_TOTAL_WITHDRAWN;
-
-  const hasStreams = activeStreams > 0;
 
   const networkMismatch = wallet.connected && wallet.isNetworkMismatch;
 
@@ -651,10 +576,10 @@ export default function Recipient() {
     }
   };
 
-  if (pageLoading || (recipientStreams.error && recipientStreams.retryCount >= MAX_LOADING_RETRIES)) {
+  if (pageLoading || isRetryExhausted) {
     return (
       <RecipientLoading
-        retryCount={recipientStreams.retryCount}
+        retryCount={retryCount}
         onRetry={handlePageRefetch}
       />
     );
@@ -664,7 +589,7 @@ export default function Recipient() {
   //   - wallet is disconnected, OR
   //   - no active streams for the connected wallet (including service errors,
   //     where we must not silently fall through to demo-balance values)
-  const serviceError = walletConnected ? recipientStreams.error : null;
+  const serviceError = walletConnected ? streamsError : null;
   if (!walletConnected || !hasStreams || serviceError) {
     return (
       <main aria-labelledby="recipient-page-title">
@@ -680,7 +605,7 @@ export default function Recipient() {
         <RecipientEmptyState
           walletConnected={walletConnected}
           loading={effectiveEmptyStateLoading}
-          error={walletConnected ? recipientStreams.error : null}
+          error={walletConnected ? streamsError : null}
           onRetry={walletConnected ? handlePageRefetch : undefined}
           ctaDisabled={isRetryingDisabled}
           retryButtonRef={pageRetryButtonRef}
