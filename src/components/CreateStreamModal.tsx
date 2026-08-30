@@ -50,6 +50,9 @@ import {
 import { formatReceiptAmount } from '../utils/receiptGenerator';
 import { amountToSmallestUnits } from '../lib/formatters';
 
+/** Maximum time to wait for a transaction receipt before timing out. */
+const RECEIPT_POLL_TIMEOUT_MS = 60_000;
+
 /** Top-level flow mode: choose between single-stream or bulk-CSV. */
 type FlowMode = 'choose' | 'single' | 'bulk';
 
@@ -313,6 +316,8 @@ export default function CreateStreamModal({
   const optimisticOpIdRef = useRef<string | null>(null);
 
   const txSubmission = useTransactionSubmission({
+    timeoutMs: RECEIPT_POLL_TIMEOUT_MS,
+    cancelOnUnmount: true,
     submit: async (idempotencyKey) => {
       const sender = wallet.address!;
       const parsedAmount = parseFloat(depositAmount.replace(/,/g, "")) || 0;
